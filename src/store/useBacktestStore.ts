@@ -1,5 +1,7 @@
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 import type { Candle, Timeframe, ChartConfig } from '../types';
+import { createDebouncedJSONStorage, armPersist } from '../lib/persistStorage';
 
 
 interface BacktestState {
@@ -12,6 +14,7 @@ interface BacktestState {
   isUploading: boolean;
   uploadProgress: number; // 0-100
   mode: 'playback' | 'simulation';
+  maxCandles: number; // cap on candles rendered on the chart (perf)
 
   loadData: (data: Candle[], symbol?: string) => void;
   setUploading: (uploading: boolean) => void;
@@ -27,12 +30,15 @@ interface BacktestState {
   rewind: () => void;
   fastForward: () => void;
   setMode: (mode: 'playback' | 'simulation') => void;
+  setMaxCandles: (n: number) => void;
   getCurrentTickTime: () => number | null;
   importState: (state: Partial<BacktestState>) => void;
   updateLiveCandle: (kline: Candle) => void;
 }
 
-export const useBacktestStore = create<BacktestState>((set, get) => ({
+export const useBacktestStore = create<BacktestState>()(
+  persist(
+    (set, get) => ({
   rawData: [],
   symbol: '',
   currentIndex: -1,
@@ -42,6 +48,7 @@ export const useBacktestStore = create<BacktestState>((set, get) => ({
   isUploading: false,
   uploadProgress: 0,
   mode: 'playback',
+  maxCandles: 0, // 0 = no cap (show all candles)
 
   loadData: (data: Candle[], symbol?: string) => set({ 
     rawData: data, 
@@ -93,6 +100,8 @@ export const useBacktestStore = create<BacktestState>((set, get) => ({
 
   setMode: (mode: 'playback' | 'simulation') => set({ mode }),
 
+  setMaxCandles: (n: number) => set({ maxCandles: Math.max(0, Math.floor(n)) }),
+
   getCurrentTickTime: () => {
     const { rawData, currentIndex } = get();
     if (rawData.length === 0 || currentIndex === -1) return null;
@@ -121,4 +130,42 @@ export const useBacktestStore = create<BacktestState>((set, get) => ({
       };
     });
   }
-}));
+    }),
+    {
+      name: 'backtest-state-storage',
+      version: 1,
+      storage: createDebouncedJSONStorage(),
+      // Don't auto-restore on startup; the simulation is re-applied only after
+      // the corresponding K-line data has been loaded (see restoreSavedSession).
+      skipHydration: true,
+      partialize: (state) => ({
+        symbol: state.symbol,
+        currentIndex: state.currentIndex,
+        charts: state.charts,
+        playbackSpeed: state.playbackSpeed,
+        mode: state.mode,
+        maxCandles: state.maxCandles,
+      }),
+    }
+  )
+);
+
+// Persist on any low-frequency change (symbol, charts/timeframe, playback
+// speed, mode, maxCandles, isPlaying) but NOT on the per-tick `currentIndex`
+// update, which would write on every playback frame.
+useBacktestStore.subscribe((state, prev) => {
+  if (state.currentIndex === prev.currentIndex) {
+    armPersist(); // a non-tick field changed
+    return;
+  }
+  if (
+    state.symbol !== prev.symbol ||
+    state.charts !== prev.charts ||
+    state.playbackSpeed !== prev.playbackSpeed ||
+    state.mode !== prev.mode ||
+    state.maxCandles !== prev.maxCandles ||
+    state.isPlaying !== prev.isPlaying
+  ) {
+    armPersist();
+  }
+});

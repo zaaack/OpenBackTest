@@ -7,6 +7,60 @@ export const CUSTOM_INDICATOR_PARAMS: Record<string, number[]> = {
   VPVR: [120, 30, 70],
 };
 
+/**
+ * Custom Bollinger Bands.
+ *
+ * The middle band is a simple moving average and the upper/lower bands are
+ * `mid ± multiplier * stddev`. Unlike the built-in (which recomputes the
+ * standard deviation per candle with `dataList.slice(...)` → O(n·period)),
+ * this version keeps a sliding-window running sum of closes AND a running sum
+ * of squares, so the whole series is computed in a single O(n) pass and we
+ * only touch the newest candle on each price tick.
+ */
+export const BOLLIndicator: IndicatorTemplate = {
+  name: 'BOLL',
+  shortName: 'BOLL',
+  series: IndicatorSeries.Price,
+  calcParams: [20, 2],
+  precision: 2,
+  shouldOhlc: true,
+  figures: [
+    { key: 'up', title: 'UP: ', type: 'line' },
+    { key: 'mid', title: 'MID: ', type: 'line' },
+    { key: 'dn', title: 'DN: ', type: 'line' },
+  ],
+  calc: (dataList, indicator) => {
+    const params = indicator.calcParams;
+    const period = Math.max(1, params[0] ?? 20);
+    const k = params[1] ?? 2;
+    const p = period - 1;
+    const result: Array<{ up?: number; mid?: number; dn?: number }> = [];
+    let closeSum = 0;
+    let sqSum = 0;
+    for (let i = 0; i < dataList.length; i++) {
+      const close = dataList[i].close;
+      closeSum += close;
+      sqSum += close * close;
+      const boll: { up?: number; mid?: number; dn?: number } = {};
+      if (i >= p) {
+        const mean = closeSum / period;
+        // Incremental population variance via sum and sum of squares.
+        const variance = Math.max(0, sqSum / period - mean * mean);
+        const md = Math.sqrt(variance);
+        boll.mid = mean;
+        boll.up = mean + k * md;
+        boll.dn = mean - k * md;
+        // Slide the window: drop the candle that just fell out of range.
+        const out = dataList[i - p].close;
+        closeSum -= out;
+        sqSum -= out * out;
+      }
+      result.push(boll);
+    }
+    return result;
+  },
+};
+
 export function registerCustomIndicators(): void {
   const VPVRIndicator: IndicatorTemplate = {
     name: 'VPVR',
@@ -191,4 +245,5 @@ export function registerCustomIndicators(): void {
   };
 
   registerIndicator(VPVRIndicator);
+  registerIndicator(BOLLIndicator);
 }

@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useTradeStore } from '../store/useTradeStore';
 import { useBacktestStore } from '../store/useBacktestStore';
+import { useConfirmStore } from '../store/useConfirmStore';
+import { EquityChart } from './EquityChart';
 import { CircleOff, Wallet, BarChart3, Activity, ChevronDown } from 'lucide-react';
 
 export function TradingPanel() {
@@ -29,10 +31,10 @@ export function TradingPanel() {
 
   // Update Unrealized P&L whenever price or position changes
   useEffect(() => {
-    if (currentPrice) {
-      updateUnrealizedPnL(currentPrice);
+    if (currentCandle) {
+      updateUnrealizedPnL(currentCandle);
     }
-  }, [currentIndex, currentPrice, position, entryPrice, activePositionSize, updateUnrealizedPnL]);
+  }, [currentIndex, currentCandle, position, entryPrice, activePositionSize, updateUnrealizedPnL]);
 
   const formatCurrency = (val: number) => {
     return new Intl.NumberFormat('en-US', {
@@ -295,8 +297,16 @@ export function TradingPanel() {
         </div>
       </div>
 
+      <EquityChart />
+
       <button
-        onClick={() => reset()}
+        onClick={() => useConfirmStore.getState().show({
+          title: 'Reset Simulation',
+          message: 'This will clear the current simulation (trades, position and equity). The saved state will be overwritten. Continue?',
+          confirmLabel: 'Reset',
+          danger: true,
+          onConfirm: () => reset(),
+        })}
         className="w-full mt-2 flex items-center justify-center gap-2 bg-dark-800 hover:bg-dark-700 text-slate-400 border border-dark-700 py-2 rounded-lg font-bold transition-all text-xs active:scale-95"
       >
         Reset Simulation

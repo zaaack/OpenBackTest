@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "homepage": "https://BinaryMasc.github.io/OpenBackTest",
+  "homepage": "https://zaaack.github.io/OpenBackTest",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",

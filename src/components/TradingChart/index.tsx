@@ -30,6 +30,7 @@ interface TradingChartProps {
 export function TradingChart({ id, timeframe }: TradingChartProps) {
   const rawData = useBacktestStore(state => state.rawData);
   const currentIndex = useBacktestStore(state => state.currentIndex);
+  const maxCandles = useBacktestStore(state => state.maxCandles);
 
   const isEditorOpen = useChartStyleStore(state => state.isEditorOpen);
   const setEditorOpen = useChartStyleStore(state => state.setEditorOpen);
@@ -37,9 +38,18 @@ export function TradingChart({ id, timeframe }: TradingChartProps) {
 
   const aggregatedData = useMemo(() => {
     if (rawData.length === 0 || currentIndex === -1) return [];
+    // `maxCandles` counts the candles *displayed on this chart* (after
+    // aggregation to the current timeframe). Aggregating the full visible range
+    // is cheap (O(n)); the cost that caused lag was rendering, which is now
+    // capped. So aggregate everything up to currentIndex, then keep only the
+    // most recent `maxCandles` aggregated candles.
     const visibleData = rawData.slice(0, currentIndex + 1);
-    return aggregateCandles(visibleData, timeframe);
-  }, [rawData, currentIndex, timeframe]);
+    const agg = aggregateCandles(visibleData, timeframe);
+    // maxCandles === 0 means "no cap" (show every candle up to currentIndex).
+    const cap = maxCandles > 0 ? maxCandles : agg.length;
+    const start = Math.max(0, agg.length - cap);
+    return agg.slice(start);
+  }, [rawData, currentIndex, maxCandles, timeframe]);
 
   const { chartRef, containerRef } = useChart({ containerId: id, aggregatedData, timeframe });
 

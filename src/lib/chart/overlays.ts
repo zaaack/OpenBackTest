@@ -357,43 +357,42 @@ export function registerCustomOverlays(): void {
   registerOverlay({
     name: 'tradeArrow',
     totalStep: 1,
-    createPointFigures: ({ coordinates, overlay }: OverlayCreateFiguresCallbackParams): OverlayFigure[] => {
-      if (coordinates.length === 0) return [];
-      const { x, y } = coordinates[0];
-      const type = overlay.extendData as 'buy' | 'sell';
+    needDefaultPointFigure: false,
+    createPointFigures: ({ coordinates, overlay, yAxis }: OverlayCreateFiguresCallbackParams): OverlayFigure[] => {
+      if (coordinates.length === 0 || !yAxis) return [];
+      const { x } = coordinates[0];
+      const ext = overlay.extendData as { type: 'buy' | 'sell'; high?: number; low?: number };
+      const type = ext.type;
       const color = type === 'buy' ? '#22c55e' : '#ef4444';
 
-      const figures: OverlayFigure[] = [];
+      const TRI = 12; // triangle size (px)
+      const GAP = 4;  // minimum gap (px) between candle and triangle
 
-      if (type === 'buy') {
-        // Arrow pointing up
-        figures.push({
-          type: 'polygon',
-          attrs: {
-            coordinates: [
-              { x, y },
-              { x: x - 6, y: y + 12 },
-              { x: x + 6, y: y + 12 }
-            ]
-          },
-          styles: { style: 'fill', color }
-        });
+      let tipY: number;
+      let baseY: number;
+      if (type === 'sell') {
+        // Short: place above the candle high, pointing down
+        const top = yAxis.convertToPixel(ext.high ?? 0);
+        tipY = top - GAP;
+        baseY = top - GAP - TRI;
       } else {
-        // Arrow pointing down
-        figures.push({
-          type: 'polygon',
-          attrs: {
-            coordinates: [
-              { x, y },
-              { x: x - 6, y: y - 12 },
-              { x: x + 6, y: y - 12 }
-            ]
-          },
-          styles: { style: 'fill', color }
-        });
+        // Long: place below the candle low, pointing up
+        const bottom = yAxis.convertToPixel(ext.low ?? 0);
+        tipY = bottom + GAP;
+        baseY = bottom + GAP + TRI;
       }
 
-      return figures;
+      return [{
+        type: 'polygon',
+        attrs: {
+          coordinates: [
+            { x, y: tipY },
+            { x: x - 6, y: baseY },
+            { x: x + 6, y: baseY }
+          ]
+        },
+        styles: { style: 'fill', color }
+      }];
     }
   });
 }

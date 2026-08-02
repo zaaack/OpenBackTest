@@ -1,5 +1,8 @@
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 import { useBacktestStore } from './useBacktestStore';
+import { createDebouncedJSONStorage, armPersist } from '../lib/persistStorage';
+import type { Candle } from '../types';
 
 export type PositionType = 'long' | 'short' | 'flat';
 export interface Trade {
@@ -27,7 +30,7 @@ export interface Position {
   trades: Trade[];
 }
 
-interface TradeState {
+export interface TradeState {
   balance: number;
   realizedPnL: number;
   unrealizedPnL: number;
@@ -67,7 +70,7 @@ interface TradeState {
   buy: (price: number) => void;
   sell: (price: number) => void;
   flat: (price: number) => void;
-  updateUnrealizedPnL: (currentPrice: number) => void;
+  updateUnrealizedPnL: (candle: Candle) => void;
   setOrderSize: (size: number) => void;
   setTakeProfit: (price: number | null) => void;
   setStopLoss: (price: number | null) => void;
@@ -77,7 +80,9 @@ interface TradeState {
   importState: (state: Partial<TradeState>) => void;
 }
 
-export const useTradeStore = create<TradeState>((set, get) => ({
+export const useTradeStore = create<TradeState>()(
+  persist(
+    (set, get) => ({
   balance: 10000,
   realizedPnL: 0,
   unrealizedPnL: 0,
@@ -609,8 +614,9 @@ export const useTradeStore = create<TradeState>((set, get) => ({
     });
   },
 
-  updateUnrealizedPnL: (currentPrice: number) => {
+  updateUnrealizedPnL: (candle: Candle) => {
     const { position, entryPrice, activePositionSize, takeProfit, stopLoss, flat, contractSize, balance, feePercent, isBlown, positionSymbol } = get();
+    const { close, high, low } = candle;
     if (position === 'flat' || entryPrice === null || isBlown) {
       set({ unrealizedPnL: 0 });
       return;
@@ -621,22 +627,23 @@ export const useTradeStore = create<TradeState>((set, get) => ({
       return;
     }
 
-    // Check TP / SL triggers
+    // Check TP / SL triggers using intrabar high/low so a wick through the
+    // level triggers the exit even if the bar closes back on the safe side.
     if (position === 'long') {
-      if (takeProfit !== null && currentPrice >= takeProfit) {
+      if (takeProfit !== null && high >= takeProfit) {
         flat(takeProfit);
         return;
       }
-      if (stopLoss !== null && currentPrice <= stopLoss) {
+      if (stopLoss !== null && low <= stopLoss) {
         flat(stopLoss);
         return;
       }
     } else if (position === 'short') {
-      if (takeProfit !== null && currentPrice <= takeProfit) {
+      if (takeProfit !== null && low <= takeProfit) {
         flat(takeProfit);
         return;
       }
-      if (stopLoss !== null && currentPrice >= stopLoss) {
+      if (stopLoss !== null && high >= stopLoss) {
         flat(stopLoss);
         return;
       }
@@ -644,21 +651,21 @@ export const useTradeStore = create<TradeState>((set, get) => ({
 
     let upnl = 0;
     if (position === 'long') {
-      upnl = (currentPrice - entryPrice) * activePositionSize * contractSize;
+      upnl = (close - entryPrice) * activePositionSize * contractSize;
     } else if (position === 'short') {
-      upnl = (entryPrice - currentPrice) * activePositionSize * contractSize;
+      upnl = (entryPrice - close) * activePositionSize * contractSize;
     }
 
-    const estimatedExitFee = activePositionSize * currentPrice * contractSize * (feePercent / 100);
+    const estimatedExitFee = activePositionSize * close * contractSize * (feePercent / 100);
     upnl -= estimatedExitFee;
 
     const equity = balance + upnl;
-    // const positionValue = activePositionSize * currentPrice * contractSize;
+    // const positionValue = activePositionSize * close * contractSize;
     // const marginRequired = positionValue * (marginBlowoutPercent / 100);
 
     if (equity <= 0) {
       // Account Blown (Equity <= 0)
-      flat(currentPrice); // Close at current price
+      flat(close); // Close at current price
       set({ isBlown: true });
       return;
     }
@@ -718,4 +725,76 @@ export const useTradeStore = create<TradeState>((set, get) => ({
   },
 
   importState: (state: Partial<TradeState>) => set((prev) => ({ ...prev, ...state }))
-}));
+    }),
+    {
+      name: 'trade-state-storage',
+      version: 1,
+      storage: createDebouncedJSONStorage(),
+      // Don't auto-restore on startup; applied via restoreSavedSession once the
+      // corresponding K-line data is loaded.
+      skipHydration: true,
+      partialize: (state) => ({
+        balance: state.balance,
+        realizedPnL: state.realizedPnL,
+        unrealizedPnL: state.unrealizedPnL,
+        position: state.position,
+        positionSymbol: state.positionSymbol,
+        entryPrice: state.entryPrice,
+        activePositionSize: state.activePositionSize,
+        orderSize: state.orderSize,
+        takeProfit: state.takeProfit,
+        stopLoss: state.stopLoss,
+        leverage: state.leverage,
+        initialBalance: state.initialBalance,
+        marginBlowoutPercent: state.marginBlowoutPercent,
+        contractSize: state.contractSize,
+        feePercent: state.feePercent,
+        isBlown: state.isBlown,
+        hasTraded: state.hasTraded,
+        tradeHistory: state.tradeHistory,
+        showTradeHistory: state.showTradeHistory,
+        isFinished: state.isFinished,
+        finishedPositions: state.finishedPositions,
+        currentPositionTrades: state.currentPositionTrades,
+      }),
+    }
+  )
+);
+
+// Persist (flush to localStorage) on any meaningful change — trades, plus all
+// low-frequency user/setting changes (leverage, TP/SL, timeframe, mode, etc.)
+// — but NOT on the per-tick mark-to-market update, which only touches
+// `unrealizedPnL`. Reference comparisons keep this cheap (no stringify of the
+// large trade arrays every frame).
+useTradeStore.subscribe((state, prev) => {
+  if (state.unrealizedPnL === prev.unrealizedPnL) {
+    armPersist(); // something other than the per-tick PnL changed
+    return;
+  }
+  if (
+    state.balance !== prev.balance ||
+    state.realizedPnL !== prev.realizedPnL ||
+    state.position !== prev.position ||
+    state.positionSymbol !== prev.positionSymbol ||
+    state.entryPrice !== prev.entryPrice ||
+    state.activePositionSize !== prev.activePositionSize ||
+    state.orderSize !== prev.orderSize ||
+    state.takeProfit !== prev.takeProfit ||
+    state.stopLoss !== prev.stopLoss ||
+    state.leverage !== prev.leverage ||
+    state.initialBalance !== prev.initialBalance ||
+    state.marginBlowoutPercent !== prev.marginBlowoutPercent ||
+    state.contractSize !== prev.contractSize ||
+    state.feePercent !== prev.feePercent ||
+    state.isBlown !== prev.isBlown ||
+    state.hasTraded !== prev.hasTraded ||
+    state.tradeHistory !== prev.tradeHistory ||
+    state.showTradeHistory !== prev.showTradeHistory ||
+    state.isFinished !== prev.isFinished ||
+    state.finishedPositions !== prev.finishedPositions ||
+    state.currentPositionTrades !== prev.currentPositionTrades
+  ) {
+    armPersist();
+  }
+});
+

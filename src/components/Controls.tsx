@@ -6,6 +6,8 @@ import type { Candle } from '../types';
 import { PlaybackBar } from './PlaybackBar';
 import { TradingPanel } from './TradingPanel';
 import { useTradeStore } from '../store/useTradeStore';
+import { useConfirmStore } from '../store/useConfirmStore';
+import { restoreSavedSession } from '../lib/sessionRestore';
 
 
 const PRESETS = [
@@ -117,7 +119,7 @@ export function Controls() {
     if (parsedData.length > 0) {
       setUploadProgress(100);
       loadData(parsedData, extractedSymbol || undefined);
-      useTradeStore.getState().reset();
+      restoreSavedSession(extractedSymbol || '');
     } else {
       setUploading(false);
       setUploadProgress(0);
@@ -197,8 +199,16 @@ export function Controls() {
             alert('Please load the CSV data first before importing the session.');
             return;
           }
-          useBacktestStore.getState().importState(session.backtest);
-          useTradeStore.getState().importState(session.trade);
+          useConfirmStore.getState().show({
+            title: 'Import Session',
+            message: 'Importing will overwrite the current simulation state (including any saved progress). Continue?',
+            confirmLabel: 'Import',
+            danger: true,
+            onConfirm: () => {
+              useBacktestStore.getState().importState(session.backtest);
+              useTradeStore.getState().importState(session.trade);
+            },
+          });
         } else {
           alert('Invalid session file format.');
         }

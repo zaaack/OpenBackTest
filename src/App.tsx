@@ -1,11 +1,9 @@
 import { Controls } from './components/Controls';
 import { ChartGrid } from './components/ChartGrid';
 import { StatsModal } from './components/StatsModal';
-//import { useBacktestStore } from './store/useBacktestStore';
+import { ConfirmDialog } from './components/ConfirmDialog';
 
 function App() {
-  //const symbol = useBacktestStore((state) => state.symbol);
-
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-dark-900 font-sans text-slate-300">
       <Controls />
@@ -15,6 +13,7 @@ function App() {
         </div>
       </main>
       <StatsModal />
+      <ConfirmDialog />
     </div>
   );
 }

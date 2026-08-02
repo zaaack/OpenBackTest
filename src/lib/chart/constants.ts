@@ -3,9 +3,7 @@ export const CANDLE_PANE_ID = 'candle_pane';
 
 import { CUSTOM_INDICATORS_LIST, CUSTOM_INDICATOR_PARAMS } from './customIndicators';
 
-// ToDo: Disabled Bollinger Bands (BOLL) and SMA for now
-//export const INDICATORS_LIST = ['MA', 'EMA', 'SMA', 'MACD', 'VOL', 'RSI', 'BOLL'] as const;
-const NATIVE_INDICATORS = ['MA', 'EMA', 'MACD', 'VOL', 'RSI'] as const;
+const NATIVE_INDICATORS = ['MA', 'EMA', 'MACD', 'VOL', 'RSI', 'BOLL'] as const;
 export const INDICATORS_LIST = [...NATIVE_INDICATORS, ...CUSTOM_INDICATORS_LIST] as const;
 export type IndicatorName = typeof INDICATORS_LIST[number];
 
@@ -18,7 +16,7 @@ export const DEFAULT_INDICATOR_PARAMS: Record<string, number[]> = {
   MACD: [12, 26, 9],
   VOL: [],
   RSI: [14],
-  BOLL: [20],
+  BOLL: [20, 2],
   ...CUSTOM_INDICATOR_PARAMS,
 };
 

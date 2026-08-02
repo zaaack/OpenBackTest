@@ -152,7 +152,7 @@ function getParamLabels(name: string): string[] {
     SMA: ['Period'],
     MACD: ['Fast', 'Slow', 'Signal'],
     RSI: ['Period'],
-    BOLL: ['Period'],
+    BOLL: ['Period', 'Multiplier'],
   };
   return map[name] ?? [];
 }

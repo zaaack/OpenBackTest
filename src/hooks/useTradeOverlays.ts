@@ -2,9 +2,41 @@ import { useEffect, useRef } from 'react';
 import type { Chart, OverlayEvent } from 'klinecharts';
 import { useTradeStore } from '../store/useTradeStore';
 
+/**
+ * Binary search the (ascending, time-sorted) data list for the candle that
+ * contains `timestamp` (greatest ts <= timestamp). Far cheaper than the old
+ * linear scan, which mattered because this used to run every playback tick.
+ */
+function findContainingCandle(
+  dataList: Array<{ timestamp?: number; high: number; low: number }>,
+  timestamp: number,
+): { high: number; low: number } | undefined {
+  let lo = 0;
+  let hi = dataList.length - 1;
+  let res: { high: number; low: number } | undefined;
+  let nearest = dataList[0];
+  let best = Infinity;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    const ts = dataList[mid].timestamp ?? 0;
+    const diff = Math.abs(ts - timestamp);
+    if (diff < best) {
+      best = diff;
+      nearest = dataList[mid];
+    }
+    if (ts <= timestamp) {
+      res = dataList[mid];
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  return res ?? nearest;
+}
+
 export function useTradeOverlays(chartRef: React.MutableRefObject<Chart | null>) {
   const { 
-    position, entryPrice, activePositionSize, unrealizedPnL, takeProfit, stopLoss, 
+    position, entryPrice, activePositionSize, takeProfit, stopLoss, 
     tradeHistory, showTradeHistory 
   } = useTradeStore();
   const setTakeProfit = useTradeStore(state => state.setTakeProfit);
@@ -12,10 +44,14 @@ export function useTradeOverlays(chartRef: React.MutableRefObject<Chart | null>)
 
   const isDraggingRef = useRef(false);
 
-  // Sync state to chart
+  // Position / TP / SL lines. Re-syncs ONLY on a trade or a manual edit
+  // (position / entry / TP / SL change) — NOT on every playback tick. The PnL
+  // label is read once at sync time via getState, so it intentionally does not
+  // move live with the price (no per-tick overlay churn).
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart) return;
+    const unrealizedPnL = useTradeStore.getState().unrealizedPnL;
 
     if (position !== 'flat' && entryPrice !== null) {
       const pnlPrefix = unrealizedPnL >= 0 ? '+' : '';
@@ -53,13 +89,11 @@ export function useTradeOverlays(chartRef: React.MutableRefObject<Chart | null>)
       const pnl = calcPnL(val);
       const pnlStr = pnl >= 0 ? `+${pnl.toFixed(2)}` : pnl.toFixed(2);
 
-      // Override overlay data without breaking drag
-      // by not passing 'points' so we don't overwrite current drag state.
       chart.overrideOverlay({
         id: event.overlay.id,
         extendData: `${type}: ${val.toFixed(2)} (${pnlStr})`
       });
-      return false; // return false to not prevent default dragging
+      return false;
     };
 
     if (!isDraggingRef.current) {
@@ -123,19 +157,34 @@ export function useTradeOverlays(chartRef: React.MutableRefObject<Chart | null>)
         chart.removeOverlay({ id: 'slLine_overlay' });
       }
     }
+  }, [chartRef, position, entryPrice, activePositionSize, takeProfit, stopLoss, setTakeProfit, setStopLoss]);
 
-    // Sync trade history
+  // Trade-history markers. Re-sync ONLY when trades or visibility change — not
+  // on every playback tick (unrealizedPnL / currentIndex). Markers are pinned
+  // to a timestamp, so KLineCharts shows/hides them as the window scrolls
+  // without us needing to recreate them each frame.
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+
     chart.removeOverlay({ groupId: 'trade_history_group' });
     if (showTradeHistory && tradeHistory.length > 0) {
+      const dataList = chart.getDataList();
       tradeHistory.forEach(trade => {
+        const timestamp = trade.time * 1000;
+        const candle = findContainingCandle(dataList, timestamp);
         chart.createOverlay({
           id: `trade_${trade.id}`,
           name: 'tradeArrow',
           groupId: 'trade_history_group',
-          extendData: trade.type,
-          points: [{ timestamp: trade.time * 1000, value: trade.price }]
+          extendData: {
+            type: trade.type,
+            high: candle?.high,
+            low: candle?.low,
+          },
+          points: [{ timestamp, value: trade.price }]
         });
       });
     }
-  }, [chartRef, position, entryPrice, activePositionSize, unrealizedPnL, takeProfit, stopLoss, setTakeProfit, setStopLoss, tradeHistory, showTradeHistory]);
+  }, [chartRef, tradeHistory, showTradeHistory]);
 }

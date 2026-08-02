@@ -45,13 +45,13 @@ describe('useTradeStore', () => {
     useTradeStore.getState().buy(100);
     
     // Price moves to 150
-    useTradeStore.getState().updateUnrealizedPnL(150);
-    
+    useTradeStore.getState().updateUnrealizedPnL({ time: 0, open: 150, high: 150, low: 150, close: 150, volume: 0 });
+
     // (150 - 100) * 2 size * 1 contract = +100 profit
     expect(useTradeStore.getState().unrealizedPnL).toBe(100);
-    
+
     // Price drops to 80
-    useTradeStore.getState().updateUnrealizedPnL(80);
+    useTradeStore.getState().updateUnrealizedPnL({ time: 0, open: 80, high: 80, low: 80, close: 80, volume: 0 });
     
     // (80 - 100) * 2 = -40 loss
     expect(useTradeStore.getState().unrealizedPnL).toBe(-40);
@@ -65,7 +65,7 @@ describe('useTradeStore', () => {
     useTradeStore.getState().buy(100);
     
     // Price drops drastically
-    useTradeStore.getState().updateUnrealizedPnL(85);
+    useTradeStore.getState().updateUnrealizedPnL({ time: 0, open: 85, high: 85, low: 85, close: 85, volume: 0 });
     
     // (85 - 100) * 10 = -150 PnL. Equity: 100 - 150 = -50
     const state = useTradeStore.getState();
@@ -111,7 +111,7 @@ describe('useTradeStore', () => {
   it('should not update unrealized PnL when flat', () => {
     useTradeStore.getState().reset(); // Ensure flat
     
-    useTradeStore.getState().updateUnrealizedPnL(20000);
+    useTradeStore.getState().updateUnrealizedPnL({ time: 0, open: 20000, high: 20000, low: 20000, close: 20000, volume: 0 });
     
     const state = useTradeStore.getState();
     expect(state.unrealizedPnL).toBe(0);
@@ -146,5 +146,39 @@ describe('useTradeStore', () => {
     expect(finishedPos.entryPrice).toBe(100);
     expect(finishedPos.exitPrice).toBe(150);
     expect(finishedPos.pnl).toBe(50);
+  });
+
+  it('should trigger stop-loss on an intrabar wick even if close recovers', () => {
+    useTradeStore.getState().setFeePercent(0);
+    useTradeStore.getState().setContractSize(1);
+    useTradeStore.getState().setOrderSize(1);
+
+    // Enter long at 100 with a stop-loss at 90
+    useTradeStore.getState().buy(100);
+    useTradeStore.getState().setStopLoss(90);
+
+    // Bar wicks down to 88 (piercing the stop) but closes back at 95
+    useTradeStore.getState().updateUnrealizedPnL({ time: 0, open: 100, high: 101, low: 88, close: 95, volume: 0 });
+
+    const state = useTradeStore.getState();
+    expect(state.position).toBe('flat'); // Stop-loss fired
+    expect(state.stopLoss).toBeNull();
+  });
+
+  it('should trigger stop-loss on a short via intrabar high', () => {
+    useTradeStore.getState().setFeePercent(0);
+    useTradeStore.getState().setContractSize(1);
+    useTradeStore.getState().setOrderSize(1);
+
+    // Enter short at 100 with a stop-loss at 110
+    useTradeStore.getState().sell(100);
+    useTradeStore.getState().setStopLoss(110);
+
+    // Bar wicks up to 112 (piercing the stop) but closes back at 105
+    useTradeStore.getState().updateUnrealizedPnL({ time: 0, open: 100, high: 112, low: 99, close: 105, volume: 0 });
+
+    const state = useTradeStore.getState();
+    expect(state.position).toBe('flat'); // Stop-loss fired
+    expect(state.stopLoss).toBeNull();
   });
 });

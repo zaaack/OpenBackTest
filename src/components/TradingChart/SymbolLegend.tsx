@@ -33,6 +33,9 @@ export function SymbolLegend({ chartId }: SymbolLegendProps) {
   const showTradeHistory = useTradeStore(state => state.showTradeHistory);
   const setShowTradeHistory = useTradeStore(state => state.setShowTradeHistory);
 
+  const maxCandles = useBacktestStore(state => state.maxCandles);
+  const setMaxCandles = useBacktestStore(state => state.setMaxCandles);
+
   const [isOpen, setIsOpen] = useState(false);
   const [isTfOpen, setIsTfOpen] = useState(false);
   const [isLayoutOpen, setIsLayoutOpen] = useState(false);
@@ -244,6 +247,21 @@ export function SymbolLegend({ chartId }: SymbolLegendProps) {
             </div>
             {showTradeHistory && <Check size={14} className="text-primary-500" />}
           </button>
+
+          <div className="px-3 py-2 flex items-center justify-between gap-2 text-xs text-slate-300 border-t border-dark-700/50">
+            <span>Max Candles <span className="text-slate-500">(0=不限制)</span></span>
+            <input
+              type="number"
+              min={0}
+              max={100000}
+              value={maxCandles}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                if (!Number.isNaN(v)) setMaxCandles(v);
+              }}
+              className="w-20 bg-dark-900 border border-dark-700 rounded px-2 py-1 text-right text-xs text-slate-100 focus:outline-none focus:border-primary-500"
+            />
+          </div>
         </div>
       )}
 
