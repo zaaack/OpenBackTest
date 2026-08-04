@@ -70,6 +70,7 @@ function getIndicatorLabel(name: string): string {
     VOL: 'Volume',
     RSI: 'Relative Strength',
     BOLL: 'Bollinger Bands',
+    TRIPPLEEMA: 'Triple EMA',
   };
   return labels[name] ?? name;
 }

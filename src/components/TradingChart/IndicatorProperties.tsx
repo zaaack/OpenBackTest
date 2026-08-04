@@ -153,6 +153,7 @@ function getParamLabels(name: string): string[] {
     MACD: ['Fast', 'Slow', 'Signal'],
     RSI: ['Period'],
     BOLL: ['Period', 'Multiplier'],
+    TRIPPLEEMA: ['Period 1', 'Period 2', 'Period 3'],
   };
   return map[name] ?? [];
 }

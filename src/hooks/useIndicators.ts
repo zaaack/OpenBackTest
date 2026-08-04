@@ -18,6 +18,9 @@ import { hexToRgba } from '../lib/chart/utils';
  */
 const MERGEABLE_OVERLAYS = new Set(['MA', 'EMA', 'SMA']);
 
+/** Opacity per figure for multi-line non-mergeable overlays (e.g. BOLL, TRIPPLEEMA). */
+const lineAlphas = [1, 0.7, 0.45];
+
 export function useIndicators(chartRef: React.RefObject<Chart | null>) {
   const [instances, setInstances] = useState<IndicatorInstance[]>([]);
   const [showAddMenu, setShowAddMenu] = useState(false);
@@ -113,13 +116,20 @@ export function useIndicators(chartRef: React.RefObject<Chart | null>) {
         paneId = 'candle_pane';
         // Sync will be called after state update below
       } else {
-        // Non-mergeable overlay (BOLL) — stack on candle_pane
+        // Non-mergeable overlay (BOLL, TRIPPLEEMA) — stack on candle_pane.
+        // Give each figure a distinguishable shade of the assigned color.
         paneId = 'candle_pane';
         chart.createIndicator({ name, calcParams }, true, { id: 'candle_pane' });
-        const rgba = hexToRgba(color, 1);
+        const lines = lineAlphas.map((a) => ({
+          size: 2,
+          style: LineType.Solid,
+          smooth: false,
+          dashedValue: [2, 2],
+          color: hexToRgba(color, a),
+        }));
         requestAnimationFrame(() => {
           chartRef.current?.overrideIndicator(
-            { name, styles: { lines: [{ size: 2, style: LineType.Solid, smooth: false, dashedValue: [2, 2], color: rgba }] } },
+            { name, styles: { lines } },
             'candle_pane',
           );
         });
@@ -216,9 +226,15 @@ export function useIndicators(chartRef: React.RefObject<Chart | null>) {
           );
         }
         if (changes.color !== undefined || changes.opacity !== undefined) {
-          const rgba = hexToRgba(updated.color, updated.opacity);
+          const lines = lineAlphas.map((a) => ({
+            size: 2,
+            style: LineType.Solid,
+            smooth: false,
+            dashedValue: [2, 2],
+            color: hexToRgba(updated.color, updated.opacity * a),
+          }));
           chart.overrideIndicator(
-            { name: updated.name, styles: { lines: [{ size: 2, style: LineType.Solid, smooth: false, dashedValue: [2, 2], color: rgba }] } },
+            { name: updated.name, styles: { lines } },
             'candle_pane',
           );
         }

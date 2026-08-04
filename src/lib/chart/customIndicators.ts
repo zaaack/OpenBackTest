@@ -2,9 +2,10 @@ import { registerIndicator } from 'klinecharts';
 import type { IndicatorTemplate, IndicatorDrawParams } from 'klinecharts';
 import { IndicatorSeries } from 'klinecharts';
 
-export const CUSTOM_INDICATORS_LIST = ['VPVR'] as const;
+export const CUSTOM_INDICATORS_LIST = ['VPVR', 'TRIPPLEEMA'] as const;
 export const CUSTOM_INDICATOR_PARAMS: Record<string, number[]> = {
   VPVR: [120, 30, 70],
+  TRIPPLEEMA: [9, 21, 55],
 };
 
 /**
@@ -58,6 +59,51 @@ export const BOLLIndicator: IndicatorTemplate = {
       result.push(boll);
     }
     return result;
+  },
+};
+
+/**
+ * Triple EMA: three exponential moving averages drawn in a single overlay.
+ *
+ * Each EMA is computed incrementally with the standard recurrence
+ * `ema_t = price_t * alpha + ema_{t-1} * (1 - alpha)`, where
+ * `alpha = 2 / (period + 1)`. The first EMA value is seeded with the first
+ * close, so the line starts at the very first candle. The three periods are
+ * taken from `calcParams[0..2]`.
+ */
+export const TRIPPLEEMAIndicator: IndicatorTemplate = {
+  name: 'TRIPPLEEMA',
+  shortName: 'TRIPPLEEMA',
+  series: IndicatorSeries.Price,
+  calcParams: CUSTOM_INDICATOR_PARAMS['TRIPPLEEMA'],
+  precision: 2,
+  shouldOhlc: true,
+  figures: [
+    { key: 'ema1', title: 'EMA1: ', type: 'line' },
+    { key: 'ema2', title: 'EMA2: ', type: 'line' },
+    { key: 'ema3', title: 'EMA3: ', type: 'line' },
+  ],
+  calc: (dataList, indicator) => {
+    const periods = [0, 1, 2].map((idx) =>
+      Math.max(1, Math.floor(Number(indicator.calcParams[idx]) || 0))
+    );
+    const alphas = periods.map((p) => 2 / (p + 1));
+    const prev = [NaN, NaN, NaN];
+
+    return dataList.map((data, i) => {
+      const close = data.close;
+      const result: { ema1?: number; ema2?: number; ema3?: number } = {};
+      for (let k = 0; k < 3; k++) {
+        const key = (['ema1', 'ema2', 'ema3'] as const)[k];
+        if (i === 0) {
+          prev[k] = close;
+        } else {
+          prev[k] = close * alphas[k] + prev[k] * (1 - alphas[k]);
+        }
+        result[key] = prev[k];
+      }
+      return result;
+    });
   },
 };
 
@@ -246,4 +292,5 @@ export function registerCustomIndicators(): void {
 
   registerIndicator(VPVRIndicator);
   registerIndicator(BOLLIndicator);
+  registerIndicator(TRIPPLEEMAIndicator);
 }
